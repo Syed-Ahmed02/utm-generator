@@ -2,6 +2,7 @@
 
 import { db } from "@/db/drizzle";
 import { utmSources, utmMediums, campaigns, utmUrls } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 export async function getUtmData() {
   try {
@@ -62,3 +63,12 @@ export async function insertCampaign(name: string) {
     throw error;
   }
 } 
+export async function removeCampaign(name: string) {
+  try {
+    const result = await db.delete(campaigns).where(eq(campaigns.name,name)).returning();
+    return result[0];
+  } catch (error) {
+    console.error("Error deleting campaign:", error);
+    throw error;
+  }
+}

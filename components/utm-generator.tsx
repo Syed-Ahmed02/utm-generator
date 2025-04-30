@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getUtmData } from "@/app/actions";
-
+import { removeCampaign,insertCampaign } from "@/app/actions";
 // Default campaign
 const DEFAULT_CAMPAIGN = "live_by_design";
 
@@ -129,13 +129,15 @@ export function UTMGenerator() {
   };
 
   // Add new campaign
-  const addCampaign = () => {
+  const addCampaign = async () => {
     if (!showCampaignInput) {
       setShowCampaignInput(true);
       return;
     }
 
     if (newCampaign && !campaigns.includes(newCampaign)) {
+      "use server"
+      const res = await insertCampaign(newCampaign)
       setCampaigns([...campaigns, newCampaign]);
       setCampaign(newCampaign);
       setNewCampaign("");
@@ -147,11 +149,12 @@ export function UTMGenerator() {
   };
 
   // Remove campaign
-  const removeCampaign = (campaignToRemove: string) => {
+  const removeCampaign = async (campaignToRemove: string) => {
     if (campaignToRemove !== DEFAULT_CAMPAIGN) {
       const updatedCampaigns = campaigns.filter((c) => c !== campaignToRemove);
       setCampaigns(updatedCampaigns);
-
+      "use server"
+      const res = await removeCampaign(campaignToRemove)
       // If the current campaign is being removed, reset to default
       if (campaign === campaignToRemove) {
         setCampaign(DEFAULT_CAMPAIGN);
