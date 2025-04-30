@@ -17,9 +17,10 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getUtmData } from "@/app/actions";
-import { removeCampaign,insertCampaign } from "@/app/actions";
-// Default campaign
+import { removeCampaign as removeCampaignAction,insertCampaign } from "@/app/actions";
+import { config } from "dotenv";
 const DEFAULT_CAMPAIGN = "live_by_design";
+config({ path: '.env' });
 
 export function UTMGenerator() {
   const [url, setUrl] = useState("");
@@ -67,7 +68,8 @@ export function UTMGenerator() {
   };
 
   // Generate UTM URL
-  const generateUtmUrl = () => {
+  const generateUtmUrl = async () => {
+    
     if (!url) {
       toast.error("Url Is Required", {
         description: "Please enter a valid URL",
@@ -81,6 +83,8 @@ export function UTMGenerator() {
       });
       return;
     }
+
+   
 
     // Create URL object to handle query parameters properly
     let baseUrl = url;
@@ -107,7 +111,22 @@ export function UTMGenerator() {
       }
 
       setGeneratedUrl(urlObj.toString());
-
+      "use server"
+      await fetch(process.env.NEXT_PUBLIC_WEBHOOK_URL || "", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          originalUrl:url,
+          generatedUrl: urlObj.toString(),
+          source: source,       
+          medium: medium,       
+          campaign: campaign,   
+          title: title          
+        })
+      });
+      
       toast.success("UTM URL generated", {
         description: "Your UTM URL has been generated successfully",
       });
@@ -154,7 +173,7 @@ export function UTMGenerator() {
       const updatedCampaigns = campaigns.filter((c) => c !== campaignToRemove);
       setCampaigns(updatedCampaigns);
       "use server"
-      const res = await removeCampaign(campaignToRemove)
+      const res = await removeCampaignAction(campaignToRemove)
       // If the current campaign is being removed, reset to default
       if (campaign === campaignToRemove) {
         setCampaign(DEFAULT_CAMPAIGN);
@@ -177,10 +196,11 @@ export function UTMGenerator() {
           <Label htmlFor="url">URL *</Label>
           <Input
             id="url"
-            placeholder="Enter the destination URL (e.g., example.com/page)"
+            placeholder="Enter the destination URL (e.g., www.fawazcentral.com)"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             required
+            
           />
         </div>
 
