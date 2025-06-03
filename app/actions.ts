@@ -87,3 +87,67 @@ export async function removeCampaign(name: string) {
   }
 }
 
+export async function insertUtmSource(name: string) {
+  try {
+    const result = await db.insert(utmSources).values({
+      id: Math.floor(Math.random() * 1000000), // Generate a random ID
+      name,
+    }).returning();
+    
+    return result[0];
+  } catch (error) {
+    console.error("Error inserting UTM source:", error);
+    throw error;
+  }
+}
+
+export async function removeUtmSource(name: string) {
+  try {
+    const result = await db
+      .delete(utmSources)
+      .where(eq(utmSources.name, name))
+      .returning();
+
+    if (result.length === 0) {
+      throw new Error("UTM source not found.");
+    }
+
+    return result[0];
+  } catch (error) {
+    console.error("Error deleting UTM source:", error);
+    throw error;
+  }
+}
+
+export async function insertUtmMedium(name: string) {
+  try {
+    const result = await db.insert(utmMediums).values({
+      id: Math.floor(Math.random() * 1000000), // Generate a random ID
+      name,
+    }).returning();
+    
+    return result[0];
+  } catch (error) {
+    console.error("Error inserting UTM medium:", error);
+    throw error;
+  }
+}
+
+export async function removeUtmMedium(name: string) {
+  try {
+    const result = await db
+      .delete(utmMediums)
+      .where(eq(utmMediums.name, name))
+      .returning();
+
+    if (result.length === 0) {
+      throw new Error("UTM medium not found.");
+    }
+
+    return result[0];
+  } catch (error) {
+    console.error("Error deleting UTM medium:", error);
+    throw error;
+  }
+}
+

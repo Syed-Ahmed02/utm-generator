@@ -16,8 +16,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { getUtmData } from "@/app/actions";
-import { removeCampaign as removeCampaignAction,insertCampaign } from "@/app/actions";
+import { 
+  getUtmData, 
+  removeCampaign as removeCampaignAction, 
+  insertCampaign,
+  insertUtmSource,
+  removeUtmSource,
+  insertUtmMedium,
+  removeUtmMedium,
+  insertUtmUrl
+} from "@/app/actions";
 import { config } from "dotenv";
 const DEFAULT_CAMPAIGN = "live_by_design";
 config({ path: '.env' });
@@ -30,8 +38,12 @@ export function UTMGenerator() {
   const [title, setTitle] = useState("");
   const [campaigns, setCampaigns] = useState([DEFAULT_CAMPAIGN]);
   const [newCampaign, setNewCampaign] = useState("");
+  const [newSource, setNewSource] = useState("");
+  const [newMedium, setNewMedium] = useState("");
   const [generatedUrl, setGeneratedUrl] = useState("");
   const [showCampaignInput, setShowCampaignInput] = useState(false);
+  const [showSourceInput, setShowSourceInput] = useState(false);
+  const [showMediumInput, setShowMediumInput] = useState(false);
   const [utmData, setUtmData] = useState<{
     sources: { id: number; name: string }[];
     mediums: { id: number; name: string }[];
@@ -69,7 +81,6 @@ export function UTMGenerator() {
 
   // Generate UTM URL
   const generateUtmUrl = async () => {
-    
     if (!url) {
       toast.error("Url Is Required", {
         description: "Please enter a valid URL",
@@ -83,8 +94,6 @@ export function UTMGenerator() {
       });
       return;
     }
-
-   
 
     // Create URL object to handle query parameters properly
     let baseUrl = url;
@@ -110,26 +119,53 @@ export function UTMGenerator() {
         urlObj.searchParams.set("utm_content", formatTitle(title));
       }
 
-      setGeneratedUrl(urlObj.toString());
-      "use server"
-      await fetch(process.env.NEXT_PUBLIC_WEBHOOK_URL || "", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          originalUrl:url,
-          generatedUrl: urlObj.toString(),
-          source: source,       
-          medium: medium,       
-          campaign: campaign,   
-          title: title          
-        })
-      });
+      const generatedUrlString = urlObj.toString();
+      setGeneratedUrl(generatedUrlString);
       
-      toast.success("UTM URL generated", {
-        description: "Your UTM URL has been generated successfully",
-      });
+      // Save to database
+      try {
+        const sourceData = utmData?.sources.find(s => s.name === source);
+        const mediumData = utmData?.mediums.find(m => m.name === medium);
+        const campaignData = utmData?.campaigns.find(c => c.name === campaign);
+
+        await insertUtmUrl({
+          baseUrl: url,
+          sourceId: sourceData?.id || 0,
+          mediumId: mediumData?.id,
+          campaignId: campaignData?.id,
+          content: title ? formatTitle(title) : undefined,
+          generatedUrl: generatedUrlString,
+        });
+
+        toast.success("UTM URL generated and saved", {
+          description: "Your UTM URL has been generated and saved to the database",
+        });
+      } catch (dbError) {
+        console.error("Error saving to database:", dbError);
+        toast.error("UTM URL generated but not saved", {
+          description: "The URL was generated but couldn't be saved to the database",
+        });
+      }
+      
+      try {
+        await fetch(process.env.NEXT_PUBLIC_WEBHOOK_URL || "", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            originalUrl: url,
+            generatedUrl: generatedUrlString,
+            source: source,       
+            medium: medium,       
+            campaign: campaign,   
+            title: title          
+          })
+        });
+      } catch (webhookError) {
+        console.error("Webhook error:", webhookError);
+      }
+      
     } catch (error) {
       toast.error("Invalid URL", {
         description: "Please enter a valid URL",
@@ -155,37 +191,146 @@ export function UTMGenerator() {
     }
 
     if (newCampaign && !campaigns.includes(newCampaign)) {
-      "use server"
-      const res = await insertCampaign(newCampaign)
-      setCampaigns([...campaigns, newCampaign]);
-      setCampaign(newCampaign);
-      setNewCampaign("");
-      setShowCampaignInput(false);
-      toast.success("Campaign added", {
-        description: `"${newCampaign}" has been added to campaigns`,
-      });
+      try {
+        await insertCampaign(newCampaign);
+        setCampaigns([...campaigns, newCampaign]);
+        setCampaign(newCampaign);
+        setNewCampaign("");
+        setShowCampaignInput(false);
+        toast.success("Campaign added", {
+          description: `"${newCampaign}" has been added to campaigns`,
+        });
+      } catch (error) {
+        toast.error("Failed to add campaign");
+      }
+    }
+  };
+
+  // Add new source
+  const addSource = async () => {
+    if (!showSourceInput) {
+      setShowSourceInput(true);
+      return;
+    }
+
+    if (newSource && utmData && !utmData.sources.some(s => s.name === newSource)) {
+      try {
+        const result = await insertUtmSource(newSource);
+        setUtmData({
+          ...utmData,
+          sources: [...utmData.sources, result]
+        });
+        setSource(newSource);
+        setNewSource("");
+        setShowSourceInput(false);
+        toast.success("Source added", {
+          description: `"${newSource}" has been added to sources`,
+        });
+      } catch (error) {
+        toast.error("Failed to add source");
+      }
+    }
+  };
+
+  // Add new medium
+  const addMedium = async () => {
+    if (!showMediumInput) {
+      setShowMediumInput(true);
+      return;
+    }
+
+    if (newMedium && utmData && !utmData.mediums.some(m => m.name === newMedium)) {
+      try {
+        const result = await insertUtmMedium(newMedium);
+        setUtmData({
+          ...utmData,
+          mediums: [...utmData.mediums, result]
+        });
+        setMedium(newMedium);
+        setNewMedium("");
+        setShowMediumInput(false);
+        toast.success("Medium added", {
+          description: `"${newMedium}" has been added to mediums`,
+        });
+      } catch (error) {
+        toast.error("Failed to add medium");
+      }
     }
   };
 
   // Remove campaign
   const removeCampaign = async (campaignToRemove: string) => {
     if (campaignToRemove !== DEFAULT_CAMPAIGN) {
-      const updatedCampaigns = campaigns.filter((c) => c !== campaignToRemove);
-      setCampaigns(updatedCampaigns);
-      "use server"
-      const res = await removeCampaignAction(campaignToRemove)
-      // If the current campaign is being removed, reset to default
-      if (campaign === campaignToRemove) {
-        setCampaign(DEFAULT_CAMPAIGN);
-      }
+      try {
+        await removeCampaignAction(campaignToRemove);
+        const updatedCampaigns = campaigns.filter((c) => c !== campaignToRemove);
+        setCampaigns(updatedCampaigns);
 
-      toast.success("Campaign removed", {
-        description: `"${campaignToRemove}" has been removed from campaigns`,
-      });
+        // If the current campaign is being removed, reset to default
+        if (campaign === campaignToRemove) {
+          setCampaign(DEFAULT_CAMPAIGN);
+        }
+
+        toast.success("Campaign removed", {
+          description: `"${campaignToRemove}" has been removed from campaigns`,
+        });
+      } catch (error) {
+        toast.error("Failed to remove campaign");
+      }
     } else {
       toast.error("Cannot remove default campaign", {
         description: `"${DEFAULT_CAMPAIGN}" is the default campaign and cannot be removed`,
       });
+    }
+  };
+
+  // Remove source
+  const removeSource = async (sourceToRemove: string) => {
+    if (utmData) {
+      try {
+        await removeUtmSource(sourceToRemove);
+        const updatedSources = utmData.sources.filter((s) => s.name !== sourceToRemove);
+        setUtmData({
+          ...utmData,
+          sources: updatedSources
+        });
+
+        // If the current source is being removed, reset
+        if (source === sourceToRemove) {
+          setSource("");
+        }
+
+        toast.success("Source removed", {
+          description: `"${sourceToRemove}" has been removed from sources`,
+        });
+      } catch (error) {
+        toast.error("Failed to remove source");
+      }
+    }
+  };
+
+  // Remove medium
+  const removeMedium = async (mediumToRemove: string) => {
+    if (utmData) {
+      try {
+        await removeUtmMedium(mediumToRemove);
+        const updatedMediums = utmData.mediums.filter((m) => m.name !== mediumToRemove);
+        setUtmData({
+          ...utmData,
+          mediums: updatedMediums
+        });
+
+        // If the current medium is being removed, reset
+        if (medium === mediumToRemove) {
+          setMedium("");
+        }
+
+        toast.success("Medium removed", {
+          description: `"${mediumToRemove}" has been removed from mediums`,
+        });
+      } catch (error) {
+        toast.error("Failed to remove medium");
+      }
     }
   };
 
@@ -200,40 +345,91 @@ export function UTMGenerator() {
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             required
-            
           />
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="source">UTM Source *</Label>
-          <Select value={source} onValueChange={setSource}>
-            <SelectTrigger id="source">
-              <SelectValue placeholder="Select source" />
-            </SelectTrigger>
-            <SelectContent>
-              {utmData?.sources.map((src) => (
-                <SelectItem key={src.id} value={src.name}>
-                  {src.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <Select value={source} onValueChange={setSource}>
+                <SelectTrigger id="source">
+                  <SelectValue placeholder="Select source" />
+                </SelectTrigger>
+                <SelectContent>
+                  {utmData?.sources.map((src) => (
+                    <SelectItem key={src.id} value={src.name}>
+                      {src.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={addSource}
+              size="icon"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {showSourceInput && (
+            <div className="flex gap-2 mt-2">
+              <Input
+                placeholder="Enter new source name"
+                value={newSource}
+                onChange={(e) => setNewSource(e.target.value)}
+                className="flex-1"
+              />
+              <Button type="button" onClick={addSource}>
+                Add
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="medium">UTM Medium</Label>
-          <Select value={medium} onValueChange={setMedium}>
-            <SelectTrigger id="medium">
-              <SelectValue placeholder="Select medium" />
-            </SelectTrigger>
-            <SelectContent>
-              {utmData?.mediums.map((med) => (
-                <SelectItem key={med.id} value={med.name}>
-                  {med.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <Select value={medium} onValueChange={setMedium}>
+                <SelectTrigger id="medium">
+                  <SelectValue placeholder="Select medium" />
+                </SelectTrigger>
+                <SelectContent>
+                  {utmData?.mediums.map((med) => (
+                    <SelectItem key={med.id} value={med.name}>
+                      {med.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={addMedium}
+              size="icon"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {showMediumInput && (
+            <div className="flex gap-2 mt-2">
+              <Input
+                placeholder="Enter new medium name"
+                value={newMedium}
+                onChange={(e) => setNewMedium(e.target.value)}
+                className="flex-1"
+              />
+              <Button type="button" onClick={addMedium}>
+                Add
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -276,26 +472,6 @@ export function UTMGenerator() {
               </Button>
             </div>
           )}
-
-          <div className="mt-2 flex flex-wrap gap-2">
-            {campaigns.map((camp) => (
-              <Badge
-                key={camp}
-                variant="secondary"
-                className="flex items-center gap-1"
-              >
-                {camp}
-                {camp !== DEFAULT_CAMPAIGN && (
-                  <button
-                    onClick={() => removeCampaign(camp)}
-                    className="ml-1 text-xs hover:text-destructive"
-                  >
-                    ×
-                  </button>
-                )}
-              </Badge>
-            ))}
-          </div>
         </div>
 
         <div className="space-y-2">
